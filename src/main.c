@@ -257,6 +257,139 @@ void rope_print(Rope *rop) {
     }
 }
 
+typedef enum RbColor { RB_BLACK, RB_RED } RbColor;
+
+typedef struct RbNode {
+    u32 index;
+    RbColor color;
+    struct RbNode *p;
+    struct RbNode *l;
+    struct RbNode *r;
+} RbNode;
+
+void rb_rotate_l(RbNode **rut, RbNode *nod) {
+    assert(nod->r);
+
+    RbNode *x = nod;
+    RbNode *y = x->r;
+    y->p      = x->p;
+
+    if(y->l) {
+        y->l->p = x;
+    }
+
+    if(!x->p) {
+        *rut = y;
+    }
+
+    if(x == x->p->l) {
+        x->p->l = y;
+    } else {
+        x->p->r = y;
+    }
+
+    y->l = x;
+    x->p = y;
+}
+
+void rb_rotate_r(RbNode **rut, RbNode *nod) {
+    assert(nod->l);
+
+    RbNode *x = nod;
+    RbNode *y = x->l;
+    y->p      = x->p;
+
+    if(y->r) {
+        y->r->p = x;
+    }
+
+    if(!x->p) {
+        *rut = y;
+    }
+
+    if(x == x->p->l) {
+        x->p->l = y;
+    } else {
+        x->p->r = y;
+    }
+
+    y->r = x;
+    x->p = y;
+}
+
+void rb_insert_fix(RbNode **rut, RbNode *nod) {
+
+    while(nod->p && nod->p->color == RB_RED) {
+        if(nod->p->p && nod->p == nod->p->p->l) {
+            RbNode *y = nod->p->p->r;
+            if(y->color == RB_RED) {
+                nod->p->color    = RB_BLACK;
+                y->color         = RB_BLACK;
+                nod->p->p->color = RB_RED;
+                nod              = nod->p->p;
+            } else if(nod == nod->p->r) {
+                nod = nod->p;
+                rb_rotate_l(rut, nod);
+            }
+            nod->p->color    = RB_BLACK;
+            nod->p->p->color = RB_RED;
+            rb_rotate_r(rut, nod->p->p);
+        } else {
+            RbNode *y = nod->p->p->l;
+            if(y->color == RB_RED) {
+                nod->p->color    = RB_BLACK;
+                y->color         = RB_BLACK;
+                nod->p->p->color = RB_RED;
+                nod              = nod->p->p;
+            } else if(nod == nod->p->l) {
+                nod = nod->p;
+                rb_rotate_r(rut, nod);
+            }
+            nod->p->color    = RB_BLACK;
+            nod->p->p->color = RB_RED;
+            rb_rotate_l(rut, nod->p->p);
+        }
+    }
+
+    (*rut)->color = RB_BLACK;
+}
+
+void rb_insert(RbNode **rut, RbNode *nod) {
+    RbNode *p = 0;
+    RbNode *x = *rut;
+
+    while(x) {
+        p = x;
+        if(nod->index < x->index) {
+            x = x->l;
+        } else {
+            x = x->r;
+        }
+    }
+
+    nod->p = p;
+
+    if(!p) {
+        *rut = nod;
+    } else if(nod->index < p->index) {
+        p->l = nod;
+    } else {
+        p->r = nod;
+    }
+
+    nod->l     = 0;
+    nod->r     = 0;
+    nod->color = RB_RED;
+
+    rb_insert_fix(rut, nod);
+}
+
+RbNode *rb_remove(RbNode *rut, RbNode *nod) {
+    unused(rut);
+    unused(nod);
+    return 0;
+}
+
 int main(void) {
 
     Arena arena = arena_create(mb(124));
