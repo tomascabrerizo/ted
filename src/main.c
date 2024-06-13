@@ -118,10 +118,16 @@ typedef struct Rope {
 } Rope;
 
 bool rope_leaf(Rope *rop) {
+    if(!rop) {
+        return true;
+    }
     return (rop->type == ROPE_TYPE_STR8);
 }
 
 sz rope_count(Rope *rop) {
+    if(!rop) {
+        return 0;
+    }
     sz count = 0;
     if(rope_leaf(rop)) {
         count += rop->str.size;
@@ -130,6 +136,10 @@ sz rope_count(Rope *rop) {
         count += rope_count(rop->r);
     }
     return count;
+}
+
+static inline bool rope_is_rut(Rope *rop) {
+    return rop->p == 0;
 }
 
 static inline bool rope_is_l(Rope *rop) {
@@ -148,13 +158,17 @@ static inline bool rope_is_r(Rope *rop) {
 
 static inline void rope_set_l(Rope *rut, Rope *rop) {
     assert(rut->type == ROPE_TYPE_COUNT);
-    rop->p = rut;
+    if(rop) {
+        rop->p = rut;
+    }
     rut->l = rop;
 }
 
 static inline void rope_set_r(Rope *rut, Rope *rop) {
     assert(rut->type == ROPE_TYPE_COUNT);
-    rop->p = rut;
+    if(rop) {
+        rop->p = rut;
+    }
     rut->r = rop;
 }
 
@@ -162,6 +176,11 @@ Rope *rope_alloc(Arena *arena) {
     Rope *res = (Rope *)arena_push(arena, sizeof(*res), 8);
     res->p    = 0;
     return res;
+}
+
+void rope_free(Arena *arena, Rope *rop) {
+    unused(arena);
+    unused(rop);
 }
 
 Rope *rope_alloc_count(Arena *arena, sz count) {
@@ -184,7 +203,11 @@ Rope *rope_alloc_str8(Arena *arena, Str8 str) {
 
 char rope_index(Rope *rop, sz index) {
     if(rope_leaf(rop)) {
-        return (char)rop->str.data[index];
+        if(rop) {
+            return (char)rop->str.data[index];
+        } else {
+            return 0;
+        }
     } else {
         if(index >= rop->count) {
             return rope_index(rop->r, index - rop->count);
@@ -194,14 +217,6 @@ char rope_index(Rope *rop, sz index) {
     }
 }
 
-Rope *rope_insert(Arena *arena, Rope *rop, Str8 str) {
-    Rope *rut = rope_alloc_count(arena, rope_count(rop));
-    Rope *res = rope_alloc_str8(arena, str);
-    rope_set_l(rut, rop);
-    rope_set_r(rut, res);
-    return rut;
-}
-
 Rope *rope_concat(Arena *arena, Rope *r0, Rope *r1) {
     Rope *res = rope_alloc_count(arena, rope_count(r0));
     rope_set_l(res, r0);
@@ -209,51 +224,110 @@ Rope *rope_concat(Arena *arena, Rope *r0, Rope *r1) {
     return res;
 }
 
-void rope_split(Arena *arena, Rope *rop, sz index) {
-    if(rope_leaf(rop)) {
-
-        if(index == 0) {
-            return;
-        }
-
-        assert(index < rop->str.size);
-
-        Str8 str = str8_split(arena, &rop->str, index);
-
-        Rope *rut = rope_alloc_count(arena, str.size);
-        Rope *new = rope_alloc_str8(arena, str);
-
-        if(rope_is_l(rop)) {
-            rope_set_l(rop->p, rut);
-        } else if(rope_is_r(rop)) {
-            rope_set_r(rop->p, rut);
-        } else {
-            assert(!"invalid code path");
-        }
-
-        rope_set_l(rut, new);
-        rope_set_r(rut, rop);
-
-    } else {
-        if(index >= rop->count) {
-            rope_split(arena, rop->r, index - rop->count);
-        } else {
-            rope_split(arena, rop->l, index);
-        }
-    }
-}
-
 Rope *rope_rebalance(Rope *rope) {
     return rope;
 }
 
-void rope_print(Rope *rop) {
-    if(rope_leaf(rop)) {
+Rope *rope_split_leaf(Arena *arena, Rope *leaf, sz index) {
+    assert(rope_leaf(leaf));
+    assert(index < leaf->str.size);
+    Str8 str_l = str8_(leaf->str.data, index);
+    Str8 str_r = str8_(leaf->str.data + index, leaf->str.size - index);
+    Rope *l    = rope_alloc_str8(arena, str_l);
+    Rope *r    = rope_alloc_str8(arena, str_r);
+    Rope *rut  = rope_alloc_count(arena, l->str.size);
+    rope_set_l(rut, l);
+    rope_set_r(rut, r);
+    if(rope_is_l(leaf)) {
+        rope_set_l(leaf->p, rut);
+    } else {
+        assert(rope_is_r(leaf));
+        rope_set_r(leaf->p, rut);
+    }
+    rope_free(arena, leaf);
+    return rut;
+}
+
+Rope *rope_split_r(Arena *arena, Rope *rop) {
+    Rope *p         = rop->p;
+    p->r            = 0;
+    sz remove_index = rope_count(rop);
+    while(p) {
+        if(rope_is_r(p)) {
+            Rope *r = p->r;
+            assert(p->count > remove_index);
+            p->count -= remove_index;
+            p->r = 0;
+            remove_index += rope_count(r);
+            rop = rope_concat(arena, rop, r);
+        }
+        p = p->p;
+    }
+    return rop;
+}
+
+void rope_split(Arena *arena, Rope *rop, sz index, Rope **f, Rope **s) {
+
+    Rope *rut = rop;
+
+    while(!rope_leaf(rop)) {
+        if(index < rop->count) {
+            rop = rop->l;
+        } else {
+            index -= rop->count;
+            rop = rop->r;
+        }
+    }
+    assert(rope_leaf(rop));
+
+    if(index > 0) {
+        rop = rope_split_leaf(arena, rop, index)->r;
+    }
+
+    sz count = rope_count(rop);
+    Rope *p  = rop->p;
+    while(p) {
+        while(rope_is_r(p)) {
+            p = p->p;
+        }
+        if(p) {
+
+            if(rope_is_rut(p)) {
+                p = p->p;
+                break;
+            }
+
+            assert(rope_is_l(p));
+            Rope *gp = p->p;
+            if(gp) {
+                gp->count -= count;
+                count += rope_count(gp->r);
+                rop   = rope_concat(arena, rop, gp->r);
+                gp->r = 0;
+            }
+            p = p->p;
+        }
+    }
+
+    *f = rope_rebalance(rut);
+    *s = rope_rebalance(rop);
+}
+
+void rope_print(Rope *rop, u32 depth) {
+    u32 temp_depth = depth;
+    while(temp_depth) {
+        printf("-");
+        --temp_depth;
+    }
+    if(!rop) {
+        printf("null\n");
+    } else if(rope_leaf(rop)) {
+
         str8_print(rop->str);
     } else {
-        printf("count: %d\n", (u32)rop->count);
-        rope_print(rop->l);
-        rope_print(rop->r);
+        printf("[%d]\n", (u32)rop->count);
+        rope_print(rop->l, depth + 2);
+        rope_print(rop->r, depth + 2);
     }
 }
 
@@ -318,7 +392,6 @@ void rb_rotate_r(RbNode **rut, RbNode *nod) {
 }
 
 void rb_insert_fix(RbNode **rut, RbNode *nod) {
-
     while(nod->p && nod->p->color == RB_RED) {
         if(nod->p->p && nod->p == nod->p->p->l) {
             RbNode *y = nod->p->p->r;
@@ -350,7 +423,6 @@ void rb_insert_fix(RbNode **rut, RbNode *nod) {
             rb_rotate_l(rut, nod->p->p);
         }
     }
-
     (*rut)->color = RB_BLACK;
 }
 
@@ -367,8 +439,6 @@ void rb_insert(RbNode **rut, RbNode *nod) {
         }
     }
 
-    nod->p = p;
-
     if(!p) {
         *rut = nod;
     } else if(nod->index < p->index) {
@@ -377,6 +447,7 @@ void rb_insert(RbNode **rut, RbNode *nod) {
         p->r = nod;
     }
 
+    nod->p     = p;
     nod->l     = 0;
     nod->r     = 0;
     nod->color = RB_RED;
@@ -390,37 +461,68 @@ RbNode *rb_remove(RbNode *rut, RbNode *nod) {
     return 0;
 }
 
-int main(void) {
+void print_test(Arena *arena, sz cursor) {
 
-    Arena arena = arena_create(mb(124));
+    Rope *r0 = rope_alloc_str8(arena, str8("Hello, "));
+    Rope *r1 = rope_alloc_str8(arena, str8("Rope!"));
+    Rope *r2 = rope_alloc_str8(arena, str8("_How was your day"));
+    Rope *r3 = rope_alloc_str8(arena, str8("NO GOOD"));
 
-    Rope *r0 = rope_alloc_str8(&arena, str8("Hello, "));
-    Rope *r1 = rope_alloc_str8(&arena, str8("World!"));
+    Rope *r4 = rope_concat(arena, r0, r1);
+    Rope *r5 = rope_concat(arena, r2, r3);
+    Rope *r6 = rope_concat(arena, r4, r5);
 
-    Rope *rut = rope_concat(&arena, r0, r1);
+    Rope *r7 = rope_alloc_str8(arena, str8(" Pajaro Loco!"));
+    Rope *r8 = rope_concat(arena, r6, r7);
 
-    rope_print(rut);
-    rope_split(&arena, rut, 7);
-    printf("-----------------------------\n");
-    rope_print(rut);
-    rope_split(&arena, rut, 5);
-    printf("-----------------------------\n");
-    rope_print(rut);
+    Rope *r9  = rope_alloc_str8(arena, str8(" ABCDEFG"));
+    Rope *r10 = rope_concat(arena, r8, r9);
 
-    printf("memory used: %d\n", (u32)arena.used);
-
-    printf("-----------------------------\n");
-#if 1
     {
-        u32 count = (u32)rope_count(rut);
-        printf("root count: %d\n", count);
+        u32 count = (u32)rope_count(r10);
         for(u32 i = 0; i < count; ++i) {
-            char c = rope_index(rut, i);
+            char c = rope_index(r10, i);
             printf("%c", c);
         }
     }
+
     printf("\n");
-#endif
+
+    Rope *r11 = 0;
+    Rope *r12 = 0;
+    rope_split(arena, r10, cursor, &r11, &r12);
+
+    {
+        u32 count = (u32)rope_count(r11);
+        for(u32 i = 0; i < count; ++i) {
+            char c = rope_index(r11, i);
+            printf("%c", c);
+        }
+    }
+
+    printf("\n");
+
+    {
+        u32 count = (u32)rope_count(r12);
+        for(u32 i = 0; i < count; ++i) {
+            char c = rope_index(r12, i);
+            printf("%c", c);
+        }
+    }
+
+    printf("\n");
+}
+
+int main(void) {
+
+    Arena arena = arena_create(mb(124));
+    unused(arena);
+
+    for(sz cursor = 1; cursor < 32; ++cursor) {
+        printf("cursor: %d\n", (u32)cursor);
+        print_test(&arena, cursor);
+        printf("----------------------------\n");
+    }
 
     return 0;
 }
