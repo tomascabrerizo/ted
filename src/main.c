@@ -138,6 +138,20 @@ sz rope_count(Rope *rop) {
     return count;
 }
 
+sz rope_leaf_count(Rope *rop) {
+    if(!rop) {
+        return 0;
+    }
+    sz count = 0;
+    if(rope_leaf(rop)) {
+        count += rop ? 1 : 0;
+    } else {
+        count += rope_leaf_count(rop->l);
+        count += rope_leaf_count(rop->r);
+    }
+    return count;
+}
+
 static inline bool rope_is_rut(Rope *rop) {
     return rop->p == 0;
 }
@@ -224,11 +238,42 @@ Rope *rope_concat(Arena *arena, Rope *r0, Rope *r1) {
     return res;
 }
 
-Rope *rope_rebalance(Rope *rope) {
-    return rope;
+void rope_collect_leafs_(Rope *rop, Rope *leafs, sz count, sz *index) {
+    if(rope_leaf(rop)) {
+        if(rop) {
+            leafs[(*index)++] = *rop;
+        }
+    } else {
+        rope_collect_leafs_(rop->l, leafs, count, index);
+        rope_collect_leafs_(rop->r, leafs, count, index);
+    }
+}
+
+void rope_collect_leafs(Arena *arena, Rope *rop, Rope **leafs, sz *count) {
+    *count   = rope_leaf_count(rop);
+    *leafs   = arena_push(arena, sizeof(*(*leafs)) * (*count), 8);
+    sz index = 0;
+    rope_collect_leafs_(rop, *leafs, *count, &index);
+}
+
+Rope *rope_rebalance(Arena *arena, Rope *rop) {
+
+    Rope *leafs    = 0;
+    sz leafs_count = 0;
+    rope_collect_leafs(arena, rop, &leafs, &leafs_count);
+
+    assert(leafs_count >= 1);
+    Rope *res = leafs + 0;
+    for(sz i = 1; i < leafs_count; ++i) {
+        Rope *leaf = leafs + i;
+        res        = rope_concat(arena, res, leaf);
+    }
+
+    return res;
 }
 
 Rope *rope_split_leaf(Arena *arena, Rope *leaf, sz index) {
+
     assert(rope_leaf(leaf));
     assert(index < leaf->str.size);
     Str8 str_l = str8_(leaf->str.data, index);
@@ -309,8 +354,8 @@ void rope_split(Arena *arena, Rope *rop, sz index, Rope **f, Rope **s) {
         }
     }
 
-    *f = rope_rebalance(rut);
-    *s = rope_rebalance(rop);
+    *f = rope_rebalance(arena, rut);
+    *s = rope_rebalance(arena, rop);
 }
 
 void rope_print(Rope *rop, u32 depth) {
@@ -461,27 +506,12 @@ RbNode *rb_remove(RbNode *rut, RbNode *nod) {
     return 0;
 }
 
-void print_test(Arena *arena, sz cursor) {
-
-    Rope *r0 = rope_alloc_str8(arena, str8("Hello, "));
-    Rope *r1 = rope_alloc_str8(arena, str8("Rope!"));
-    Rope *r2 = rope_alloc_str8(arena, str8("_How was your day"));
-    Rope *r3 = rope_alloc_str8(arena, str8("NO GOOD"));
-
-    Rope *r4 = rope_concat(arena, r0, r1);
-    Rope *r5 = rope_concat(arena, r2, r3);
-    Rope *r6 = rope_concat(arena, r4, r5);
-
-    Rope *r7 = rope_alloc_str8(arena, str8(" Pajaro Loco!"));
-    Rope *r8 = rope_concat(arena, r6, r7);
-
-    Rope *r9  = rope_alloc_str8(arena, str8(" ABCDEFG"));
-    Rope *r10 = rope_concat(arena, r8, r9);
+void print_test(Arena *arena, Rope **r10, sz cursor) {
 
     {
-        u32 count = (u32)rope_count(r10);
+        u32 count = (u32)rope_count(*r10);
         for(u32 i = 0; i < count; ++i) {
-            char c = rope_index(r10, i);
+            char c = rope_index(*r10, i);
             printf("%c", c);
         }
     }
@@ -490,7 +520,7 @@ void print_test(Arena *arena, sz cursor) {
 
     Rope *r11 = 0;
     Rope *r12 = 0;
-    rope_split(arena, r10, cursor, &r11, &r12);
+    rope_split(arena, *r10, cursor, &r11, &r12);
 
     {
         u32 count = (u32)rope_count(r11);
@@ -511,18 +541,35 @@ void print_test(Arena *arena, sz cursor) {
     }
 
     printf("\n");
+
+    *r10 = rope_concat(arena, r11, r12);
 }
 
 int main(void) {
 
-    Arena arena = arena_create(mb(124));
-    unused(arena);
+    Arena arena_ = arena_create(mb(124));
+    Arena *arena = &arena_;
 
-    for(sz cursor = 1; cursor < 32; ++cursor) {
-        printf("cursor: %d\n", (u32)cursor);
-        print_test(&arena, cursor);
-        printf("----------------------------\n");
+    Rope *r0 = rope_alloc_str8(arena, str8("Hello, "));
+    Rope *r1 = rope_alloc_str8(arena, str8("Rope!"));
+    Rope *r2 = rope_alloc_str8(arena, str8("_How was your day"));
+    Rope *r3 = rope_alloc_str8(arena, str8("NO GOOD"));
+
+    Rope *r4 = rope_concat(arena, r0, r1);
+    Rope *r5 = rope_concat(arena, r2, r3);
+    Rope *r6 = rope_concat(arena, r4, r5);
+
+    Rope *r7 = rope_alloc_str8(arena, str8(" Pajaro Loco!"));
+    Rope *r8 = rope_concat(arena, r6, r7);
+
+    Rope *r9  = rope_alloc_str8(arena, str8(" ABCDEFG"));
+    Rope *r10 = rope_concat(arena, r8, r9);
+
+    for(sz cursor = 1; cursor < 2; ++cursor) {
+        print_test(arena, &r10, cursor);
     }
+
+    printf("total memory used: %d\n", (u32)arena->used);
 
     return 0;
 }
