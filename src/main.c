@@ -221,6 +221,9 @@ void rope_print(Rope *rop, u32 depth) {
 }
 
 void rope_preatty_print(Rope *rop) {
+    if(!rop) {
+        printf("null");
+    }
     u32 count = (u32)rope_count(rop);
     for(u32 i = 0; i < count; ++i) {
         char c = rope_index(rop, i);
@@ -324,6 +327,12 @@ void rope_split(Arena *arena, Rope *rop, sz index, Rope **f, Rope **s) {
 
     Rope *rut = rop;
 
+    if(index == 0) {
+        *f = 0;
+        *s = rop;
+        return;
+    }
+
     while(!rope_leaf(rop)) {
         if(index < rop->count) {
             rop = rop->l;
@@ -334,10 +343,18 @@ void rope_split(Arena *arena, Rope *rop, sz index, Rope **f, Rope **s) {
     }
     assert(rope_leaf(rop));
 
-    // if(index > 0) {
-    rop       = rope_split_leaf(arena, rop, index)->r;
-    rop->p->r = 0;
-    //}
+    if(index > 0) {
+        rop       = rope_split_leaf(arena, rop, index)->r;
+        rop->p->r = 0;
+    } else if(rope_is_r(rop)) {
+        rop->p->r = 0;
+    } else {
+        assert(rope_is_l(rop));
+        Rope *p = rop->p;
+        while(rope_is_l(p)) {
+            p = p->p;
+        }
+    }
 
     sz count = rope_count(rop);
     Rope *p  = rop->p;
@@ -530,8 +547,8 @@ int main(void) {
     Rope *r9  = rope_alloc_str8(arena, str8(" ABCDEFG"));
     Rope *r10 = rope_concat(arena, r8, r9);
 
-    for(sz i = 1; i < 10; ++i) {
-        printf("---------------------------\n");
+    for(sz i = 0; i < 34; ++i) {
+        printf("[%d]---------------------------\n", (u32)i);
         print_test(arena, &r10, i);
     }
 
