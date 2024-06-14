@@ -337,9 +337,15 @@ void rope_split(Arena *arena, Rope *rop, sz index, Rope **f, Rope **s) {
 
     Rope *rut = rop;
 
-    if(index == 0) {
+    if(index <= 0) {
         *f = 0;
         *s = rop;
+        return;
+    }
+
+    if(index >= rope_count(rop)) {
+        *f = rop;
+        *s = 0;
         return;
     }
 
@@ -554,7 +560,7 @@ int main(void) {
     Rope *r9  = rope_alloc_str8(arena, str8(" ABCDEFG"));
     Rope *r10 = rope_concat(arena, r8, r9);
 
-    for(sz i = 0; i < rope_count(r10); ++i) {
+    for(sz i = 0; i < rope_count(r10) + 1; ++i) {
         printf("[%d]---------------------------\n", (u32)i);
         print_test(arena, &r10, i);
     }
