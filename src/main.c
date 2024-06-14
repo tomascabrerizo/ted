@@ -401,6 +401,27 @@ void rope_split(Arena *arena, Rope *rop, sz index, Rope **f, Rope **s) {
     *s = rope_rebalance(arena, rop);
 }
 
+Rope *rope_insert(Arena *arena, Rope *rop, sz index, Str8 str) {
+    Rope *new = rope_alloc_str8(arena, str);
+    Rope *f, *s;
+    rope_split(arena, rop, index, &f, &s);
+    if(!f) {
+        return rope_concat(arena, new, rop);
+    }
+    if(!s) {
+        return rope_concat(arena, rop, new);
+    }
+    return rope_concat(arena, rope_concat(arena, f, new), s);
+}
+
+Rope *rope_delete(Arena *arena, Rope *rop, sz start, sz len) {
+    Rope *lf, *ls;
+    rope_split(arena, rop, start, &lf, &ls);
+    Rope *rf, *rs;
+    rope_split(arena, rop, start + len, &rf, &rs);
+    return rope_rebalance(arena, rope_concat(arena, lf, rs));
+}
+
 typedef enum RbColor { RB_BLACK, RB_RED } RbColor;
 
 typedef struct RbNode {
