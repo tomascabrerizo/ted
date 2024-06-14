@@ -286,19 +286,29 @@ void rope_collect_leafs(Arena *arena, Rope *rop, Rope **leafs, sz *count) {
     rope_collect_leafs_(rop, *leafs, *count, &index);
 }
 
-Rope *rope_rebalance(Arena *arena, Rope *rop) {
+Rope *rope_merge(Arena *arena, Rope *leafs, sz start, sz end) {
+    sz range = end - start;
+    if(range == 1) {
+        return &leafs[start];
+    }
+    if(range == 2) {
+        return rope_concat(arena, &leafs[start], &leafs[start + 1]);
+    }
+    sz mid = start + (range / 2);
+    return rope_concat(arena, rope_merge(arena, leafs, start, mid),
+                       rope_merge(arena, leafs, mid, end));
+}
 
+Rope *rope_rebalance(Arena *arena, Rope *rop) {
     Rope *leafs    = 0;
     sz leafs_count = 0;
     rope_collect_leafs(arena, rop, &leafs, &leafs_count);
-
     assert(leafs_count >= 1);
     Rope *res = leafs + 0;
     for(sz i = 1; i < leafs_count; ++i) {
         Rope *leaf = leafs + i;
         res        = rope_concat(arena, res, leaf);
     }
-
     return res;
 }
 
@@ -516,14 +526,11 @@ RbNode *rb_remove(RbNode *rut, RbNode *nod) {
 }
 
 void print_test(Arena *arena, Rope **r10, sz cursor) {
-
     Rope *r11 = 0;
     Rope *r12 = 0;
     rope_split(arena, *r10, cursor, &r11, &r12);
-
     rope_preatty_print(r11);
     rope_preatty_print(r12);
-
     *r10 = rope_concat(arena, r11, r12);
 }
 
@@ -547,10 +554,12 @@ int main(void) {
     Rope *r9  = rope_alloc_str8(arena, str8(" ABCDEFG"));
     Rope *r10 = rope_concat(arena, r8, r9);
 
-    for(sz i = 0; i < 34; ++i) {
+    for(sz i = 0; i < rope_count(r10); ++i) {
         printf("[%d]---------------------------\n", (u32)i);
         print_test(arena, &r10, i);
     }
+
+    printf("total memory used: %dKB\n", (u32)arena->used / 1024);
 
     return 0;
 }
