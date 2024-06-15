@@ -331,10 +331,6 @@ Rope *rope_rebalance(Arena *arena, Rope *rop) {
 Rope *rope_split_leaf(Arena *arena, Rope *leaf, sz index) {
     assert(rope_leaf(leaf));
 
-    if(index == leaf->str.size) {
-        return leaf;
-    }
-
     assert(index < leaf->str.size);
     Str8 str_l = str8_(leaf->str.data, index);
     Str8 str_r = str8_(leaf->str.data + index, leaf->str.size - index);
@@ -343,11 +339,13 @@ Rope *rope_split_leaf(Arena *arena, Rope *leaf, sz index) {
     Rope *rut  = rope_alloc_count(arena, l->str.size);
     rope_set_l(rut, l);
     rope_set_r(rut, r);
-    if(rope_is_l(leaf)) {
-        rope_set_l(leaf->p, rut);
-    } else {
-        assert(rope_is_r(leaf));
-        rope_set_r(leaf->p, rut);
+    if(leaf->p) {
+        if(rope_is_l(leaf)) {
+            rope_set_l(leaf->p, rut);
+        } else {
+            assert(rope_is_r(leaf));
+            rope_set_r(leaf->p, rut);
+        }
     }
     rope_free(arena, leaf);
     return rut;
@@ -433,9 +431,14 @@ void rope_split(Arena *arena, Rope *rop, sz index, Rope **f, Rope **s) {
             *s = rop;
         } else {
             assert((index > 0));
-            rop = rope_split_leaf(arena, rop, index);
-            *f  = rop->l;
-            *s  = rop->r;
+            if(index >= rop->str.size) {
+                *f = rop;
+                *s = 0;
+            } else {
+                rop = rope_split_leaf(arena, rop, index);
+                *f  = rop->l;
+                *s  = rop->r;
+            }
         }
         return;
     }
@@ -621,27 +624,15 @@ int main(void) {
     Arena arena_ = arena_create(mb(124));
     Arena *arena = &arena_;
 
-    Rope *r0 = rope_alloc_str8(arena, str8("Hello, "));
-    Rope *r1 = rope_alloc_str8(arena, str8("Rope!"));
-    Rope *r2 = rope_alloc_str8(arena, str8("_How was your day"));
-    Rope *r3 = rope_alloc_str8(arena, str8("NO GOOD"));
+    Rope *text = rope_alloc_str8(arena, str8("Tomas"));
+    text       = rope_insert(arena, text, rope_count(text), str8(" Cabrerizo"));
+    text       = rope_insert(arena, text, 0, str8("El Capitan: "));
+    text       = rope_delete(arena, text, 2, 9);
 
-    Rope *r4 = rope_concat(arena, r0, r1);
-    Rope *r5 = rope_concat(arena, r2, r3);
-    Rope *r6 = rope_concat(arena, r4, r5);
+    rope_preatty_print(text);
+    rope_print(text, 0);
 
-    Rope *r7 = rope_alloc_str8(arena, str8(" Pajaro Loco!"));
-    Rope *r8 = rope_concat(arena, r6, r7);
-
-    Rope *r9  = rope_alloc_str8(arena, str8(" ABCDEFG"));
-    Rope *r10 = rope_concat(arena, r8, r9);
-
-    for(sz i = 1; i < rope_count(r10) + 1; ++i) {
-        printf("[%d]---------------------------\n", (u32)i);
-        print_test(arena, &r10, i);
-    }
-
-    printf("total memory used: %dKB\n", (u32)arena->used / 1024);
+    printf("total memory used: %d\n", (u32)arena->used);
 
     return 0;
 }
